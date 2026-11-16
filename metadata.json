@@ -1,0 +1,10 @@
+{
+  "name": "Remix ローカルAI基盤 学校書類管理・検索システム",
+  "description": "セキュリティと業務効率化を両立する、完全校内ローカルAI基盤の学校書類管理・AI検索・個人情報自動仮名化システム",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
