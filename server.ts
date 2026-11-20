@@ -4,31 +4,141 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
 dotenv.config();
 
 const app = express();
-const port = 3000;
+const port = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Initialize Gemini if API key is provided
-let aiClient: GoogleGenAI | null = null;
-if (process.env.GEMINI_API_KEY) {
+// ============================================================================
+// Local Ollama (Gemma 4 12B) Engine — External Cloud AI Calls Blocked
+// ============================================================================
+const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4:12b';
+const OLLAMA_VISION_MODEL = process.env.OLLAMA_VISION_MODEL || OLLAMA_MODEL;
+const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120000;
+
+interface OllamaChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  images?: string[];
+}
+
+// Serialized inference queue so concurrent requests from multiple school PCs do not overload 1 local GPU
+let inferenceQueueTail: Promise<void> = Promise.resolve();
+let activeInferenceCount = 0;
+
+function enqueueInference<T>(task: () => Promise<T>): Promise<T> {
+  activeInferenceCount += 1;
+  const run = inferenceQueueTail.then(task, task);
+  inferenceQueueTail = run.then(
+    () => {
+      activeInferenceCount = Math.max(0, activeInferenceCount - 1);
+    },
+    () => {
+      activeInferenceCount = Math.max(0, activeInferenceCount - 1);
+    }
+  );
+  return run;
+}
+
+async function checkOllamaHealth() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
   try {
-    aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+    const res = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+      method: 'GET',
+      signal: controller.signal,
     });
-  } catch (err) {
-    console.warn('Gemini client initialization failed, falling back to local engine:', err);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data: any = await res.json();
+    const models: string[] = Array.isArray(data?.models)
+      ? data.models.map((m: any) => String(m?.name || m?.model || '')).filter(Boolean)
+      : [];
+    const targetPrefix = OLLAMA_MODEL.split(':')[0].toLowerCase();
+    const modelInstalled = models.some(
+      (name) => name.toLowerCase() === OLLAMA_MODEL.toLowerCase() || name.toLowerCase().startsWith(`${targetPrefix}:`)
+    );
+    return {
+      baseUrl: OLLAMA_BASE_URL,
+      model: OLLAMA_MODEL,
+      visionModel: OLLAMA_VISION_MODEL,
+      connected: true,
+      modelInstalled,
+      availableModels: models,
+      activeQueueLength: activeInferenceCount,
+    };
+  } catch (err: any) {
+    return {
+      baseUrl: OLLAMA_BASE_URL,
+      model: OLLAMA_MODEL,
+      visionModel: OLLAMA_VISION_MODEL,
+      connected: false,
+      modelInstalled: false,
+      availableModels: [] as string[],
+      activeQueueLength: activeInferenceCount,
+      error: err?.name === 'AbortError' ? '接続タイムアウト' : err?.message || '未接続',
+    };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function callOllamaChat(params: {
+  messages: OllamaChatMessage[];
+  model?: string;
+  format?: 'json';
+  timeoutMs?: number;
+}): Promise<{ content: string; durationMs: number; model: string }> {
+  const model = params.model || OLLAMA_MODEL;
+  const timeoutMs = params.timeoutMs || OLLAMA_TIMEOUT_MS;
+
+  return enqueueInference(async () => {
+    const start = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: params.messages,
+          stream: false,
+          ...(params.format ? { format: params.format } : {}),
+          options: {
+            temperature: 0.2,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Ollama API error (${res.status}): ${errText || res.statusText}`);
+      }
+
+      const data: any = await res.json();
+      const content = String(data?.message?.content || data?.response || '').trim();
+      if (!content) {
+        throw new Error('Ollama returned an empty response');
+      }
+
+      return {
+        content,
+        durationMs: Date.now() - start,
+        model: String(data?.model || model),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 }
 
 // Default initial documents data with authentic school materials
@@ -1172,46 +1282,51 @@ rescheduleAutoBackup();
 // API Routes
 
 // 1. Server status & Local AI diagnostics
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
+  const ollama = await checkOllamaHealth();
   res.json({
     status: 'online',
-    serverType: '校内専用ローカルAIサーバー (School LAN Local Server)',
-    ipAddress: '192.168.10.25 (閉域校内LAN)',
+    serverType: '校内専用ローカルAIサーバー (Ollama + Gemma 4 12B)',
+    ipAddress: '校内LANホスト (Port ' + port + ')',
     isolation: {
-      status: 'Air-Gapped / Isolated',
+      status: 'External AI Blocked / Local Ollama Only',
       externalTrafficBlocked: true,
       packetsOutCount: 0,
-      protocol: 'HTTPS (校内LANプライベート証明書)',
+      protocol: 'HTTP/HTTPS (校内閉域LAN)',
     },
     localHardware: {
-      gpu: 'NVIDIA RTX 4090 24GB VRAM (TensorRT-LLM加速)',
-      cpu: 'AMD EPYC 16-Core Processor',
-      ram: '64GB DDR5 ECC Registered',
-      temperature: '54°C',
-      vramUsage: '16.4 GB / 24.0 GB (68%)',
+      gpu: 'ホストPC GPU / CPU ローカル推論',
+      cpu: '校内サーバーPC CPU',
+      ram: 'ローカルメモリ領域',
+      temperature: '正常',
+      vramUsage: ollama.connected ? `稼働中 (${ollama.model})` : '待機中 (Ollama未接続)',
     },
     engines: {
       llm: {
-        name: 'vLLM / Qwen2.5-32B-Instruct-AWQ (日本語高精度量子化)',
-        contextWindow: '32,768 tokens',
-        status: 'Active (推論レイテンシ ~45ms/token)',
+        name: `Ollama / ${OLLAMA_MODEL} (校内ローカルLLM)`,
+        contextWindow: '校内ローカル推論',
+        status: ollama.connected
+          ? `Connected (${ollama.modelInstalled ? 'モデル準備完了' : 'モデル未プル'})`
+          : 'Standby (ルールベースフォールバック稼働中)',
       },
       vlm: {
-        name: 'Qwen2-VL-7B-Instruct (学校帳票・手書き文字OCR解析)',
-        status: 'Ready (平均処理時間 1.2秒/頁)',
+        name: `Ollama Vision / ${OLLAMA_VISION_MODEL} (画像・手書きOCR)`,
+        status: ollama.connected ? 'Ready (画像OCR受付可能)' : 'Offline (Ollama起動待ち)',
       },
       vectorDb: {
-        name: 'ChromaDB v0.5.2 (校内ローカル埋め込み DB)',
-        embeddingModel: 'bge-m3 (日本語多言語対応 1024次元)',
+        name: '校内ローカル文書インデックス',
+        embeddingModel: 'ローカル検索インデックス',
         totalDocuments: schoolDocuments.length,
         indexedVectors: schoolDocuments.length * 4,
       },
       piiEngine: {
         name: '校内プライバシー仮名化エンジン v2.4 (ルールベース+NERハイブリッド)',
-        status: 'Mandatory Active (保存前自動適用)',
+        status: 'Mandatory Active (AI送信前・保存前に自動適用)',
       },
     },
-    cloudBackupAvailable: Boolean(aiClient),
+    cloudBackupAvailable: false,
+    externalAiBlocked: true,
+    ollama,
     backup: getBackupStatus(),
   });
 });
@@ -1745,45 +1860,48 @@ app.get('/api/documents/:id/related', (req, res) => {
   res.json({ related: related.slice(0, 4) });
 });
 
-// 4f. On-demand AI summarization for a specific document
+// 4f. On-demand AI summarization via local Ollama (Gemma 4 12B); external Gemini calls are blocked
 app.post('/api/documents/:id/summarize', async (req, res) => {
   const doc = schoolDocuments.find(d => d.id === req.params.id);
   if (!doc) {
     return res.status(404).json({ error: '書類が見つかりません' });
   }
 
-  const { useGeminiIfAvailable } = req.body || {};
+  try {
+    const result = await callOllamaChat({
+      model: OLLAMA_MODEL,
+      format: 'json',
+      timeoutMs: Math.min(OLLAMA_TIMEOUT_MS, 45000),
+      messages: [
+        {
+          role: 'system',
+          content:
+            'あなたは校内ローカルAI（Gemma 4 12B）です。仮名化済みの学校書類を教員向けに「1行の総括(summary)」と「3つの箇条書きポイント(points)」に要約し、JSON形式 {"summary": "...", "points": ["...", "...", "..."]} のみを返してください。',
+        },
+        {
+          role: 'user',
+          content: `タイトル: ${doc.title}\n本文:\n${doc.maskedText}`,
+        },
+      ],
+    });
 
-  if (aiClient && useGeminiIfAvailable) {
-    try {
-      const response = await Promise.race([
-        aiClient.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: `次の仮名化済み学校書類を、忙しい教員向けに「1行の総括」と「3つの箇条書きポイント」に簡潔に要約してください。JSON形式で {"summary": "...", "points": ["...", "...", "..."]} として出力してください。\n\nタイトル: ${doc.title}\n本文:\n${doc.maskedText}`,
-          config: {
-            responseMimeType: 'application/json',
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          },
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini summarize timeout')), 8000)
-        ),
-      ]);
-
-      const parsed = JSON.parse((response.text || '{}').trim());
-      if (parsed.summary && Array.isArray(parsed.points)) {
-        doc.summary = parsed.summary;
-        doc.aiSummaryPoints = parsed.points.slice(0, 4);
-        saveDocumentsStore();
-        return res.json({
-          summary: doc.summary,
-          aiSummaryPoints: doc.aiSummaryPoints,
-          modelUsed: 'Gemini 4 Hydrogen (要約エンジン)',
-        });
-      }
-    } catch (err: any) {
-      console.warn('Gemini summarize failed, falling back to local:', err.message);
+    const cleanedJson = result.content
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    const parsed = JSON.parse(cleanedJson);
+    if (parsed.summary && Array.isArray(parsed.points)) {
+      doc.summary = String(parsed.summary);
+      doc.aiSummaryPoints = parsed.points.map((p: any) => String(p)).slice(0, 4);
+      saveDocumentsStore();
+      return res.json({
+        summary: doc.summary,
+        aiSummaryPoints: doc.aiSummaryPoints,
+        modelUsed: `Ollama / ${result.model} (校内ローカル推論 · ${result.durationMs}ms)`,
+      });
     }
+  } catch (err: any) {
+    console.warn('Ollama summarize unavailable, falling back to local rule synthesizer:', err.message);
   }
 
   const concise = generateConciseSummary(doc.title, doc.maskedText);
@@ -1794,8 +1912,78 @@ app.post('/api/documents/:id/summarize', async (req, res) => {
   res.json({
     summary: doc.summary,
     aiSummaryPoints: doc.aiSummaryPoints,
-    modelUsed: 'vLLM / Qwen2.5-32B (ローカル要約エンジン)',
+    modelUsed: 'ローカルルール要約エンジン（Ollama未接続時フォールバック）',
   });
+});
+
+// 4g. Image OCR via local Ollama Vision (Gemma 4 12B) — External cloud OCR blocked
+app.post('/api/ocr', async (req, res) => {
+  try {
+    const { imageBase64, fileName } = req.body || {};
+    if (typeof imageBase64 !== 'string' || !imageBase64.trim()) {
+      return res.status(400).json({ error: 'OCR対象の画像データが見つかりません' });
+    }
+
+    const base64Clean = imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '').trim();
+    if (!base64Clean || base64Clean.length < 32) {
+      return res.status(400).json({ error: '有効な画像データ（Base64）を指定してください' });
+    }
+
+    const ocrResult = await callOllamaChat({
+      model: OLLAMA_VISION_MODEL,
+      timeoutMs: OLLAMA_TIMEOUT_MS,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'あなたは学校業務向けの正確な日本語OCRエンジンです。画像内の印刷文字・手書き文字・表・日付・提出期限・連絡先・差出人・氏名を省略せず、元のレイアウトや見出しを保ったままプレーンテキストで忠実に書き起こしてください。存在しない文字を推測で補完したり要約したりせず、読み取ったテキストのみを出力してください。',
+        },
+        {
+          role: 'user',
+          content: 'この学校書類画像の文字情報をすべて正確に読み取って書き起こしてください。',
+          images: [base64Clean],
+        },
+      ],
+    });
+
+    const extractedText = ocrResult.content.trim();
+    const firstNonEmptyLine = extractedText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.length >= 2) || '';
+
+    const baseTitleFromFile =
+      typeof fileName === 'string' && fileName.trim()
+        ? fileName.replace(/\.[^.]+$/, '').trim()
+        : '';
+
+    const suggestedTitle =
+      firstNonEmptyLine.length >= 3 && firstNonEmptyLine.length <= 60
+        ? firstNonEmptyLine
+        : baseTitleFromFile || 'カメラ・画像OCR読取書類';
+
+    const piiPreview = maskPiiInText(extractedText);
+
+    res.json({
+      success: true,
+      rawText: extractedText,
+      suggestedTitle,
+      piiCount: piiPreview.detectedCount,
+      maskedPreview: piiPreview.maskedText,
+      engine: `Ollama Vision / ${ocrResult.model}`,
+      isLocal: true,
+      inferenceTimeMs: ocrResult.durationMs,
+    });
+  } catch (err: any) {
+    console.warn('Ollama OCR failed:', err.message);
+    res.status(503).json({
+      success: false,
+      ocrUnavailable: true,
+      error: `校内Ollamaサーバー（${OLLAMA_BASE_URL} / モデル: ${OLLAMA_VISION_MODEL}）に接続できませんでした。PC上でOllamaとモデルを起動した状態で再度お試しください。（詳細: ${err.message}）`,
+      ollamaBaseUrl: OLLAMA_BASE_URL,
+      model: OLLAMA_VISION_MODEL,
+    });
+  }
 });
 
 // 5. Test PII masking preview on arbitrary text
@@ -1923,14 +2111,14 @@ app.post('/api/rag-search', (req, res) => {
   });
 });
 
-// 7. AI Chat & Document Assistant (RAG synthesis + optional targetDocId grounding)
+// 7. AI Chat & Document Assistant (Local Ollama Gemma 4 12B + fallback; external Gemini blocked)
 app.post('/api/ai-chat', async (req, res) => {
-  const { prompt, userRole, useGeminiIfAvailable, targetDocId } = req.body;
+  const { prompt, userRole, targetDocId } = req.body;
   if (!prompt) {
     return res.status(400).json({ error: '質問内容を入力してください' });
   }
 
-  // 1. Retrieve relevant documents context
+  // 1. Retrieve relevant documents context (RBAC filtered)
   let relevantDocs = [...schoolDocuments];
   if (userRole === '一般教諭') {
     relevantDocs = relevantDocs.filter(d => d.securityLevel === '全校共有' || d.category === '学年経営');
@@ -1960,7 +2148,7 @@ app.post('/api/ai-chat', async (req, res) => {
     activeDocs = matchedDocs.length > 0 ? matchedDocs.slice(0, 3) : relevantDocs.slice(0, 2);
   }
 
-  // Prepare safe masked context
+  // Prepare safe masked context (never send unmasked PII even to local model)
   const contextText = activeDocs
     .map(
       d =>
@@ -1968,48 +2156,41 @@ app.post('/api/ai-chat', async (req, res) => {
     )
     .join('\n\n---\n\n');
 
-  // Try real Gemini if available and requested, otherwise use local high-performance school synthesizer
-  if (aiClient && useGeminiIfAvailable) {
-    try {
-      const systemInstruction = `あなたは学校内ローカルAIサーバー「Qwen2.5-32B」として振る舞う学校業務支援AIアシスタントです。
+  // Use local Ollama (Gemma 4 12B); external Gemini path is strictly blocked
+  try {
+    const systemInstruction = `あなたは校内ローカルPC上のOllamaで動作する学校業務支援AIアシスタント（Gemma 4 12B）です。
 以下の校内文書（個人情報仮名化済み）の文脈を元に、教員の質問に正確・丁寧に答えてください。
 回答には必ずどの書類のどの条項・ページが根拠であるか【根拠: 書類名 p.X】の形式で明記してください。
 教員の業務（週報、引き継ぎ、保護者通知、マニュアル確認）にすぐ活用できるよう、要点箇条書きと実践的なアドバイスを含めてください。
 個人情報は全て仮名化コード（[生徒ID: S-XXXX]等）のまま扱い、勝手に実名を捏造しないでください。`;
 
-      const response = await Promise.race([
-        aiClient.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: `文脈情報:\n${contextText}\n\n教員からの質問:\n${prompt}`,
-          config: {
-            systemInstruction,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          },
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini chat timeout')), 8000)
-        ),
-      ]);
+    const ollamaRes = await callOllamaChat({
+      model: OLLAMA_MODEL,
+      timeoutMs: OLLAMA_TIMEOUT_MS,
+      messages: [
+        { role: 'system', content: systemInstruction },
+        { role: 'user', content: `文脈情報:\n${contextText}\n\n教員からの質問:\n${prompt}` },
+      ],
+    });
 
-      const text = response.text || '回答を生成できませんでした。';
-      return res.json({
-        response: text,
-        modelUsed: 'Gemini 4 Hydrogen (校内ローカルvLLM互換モード)',
-        isLocal: false,
-        referencedDocs: activeDocs.map(d => ({
-          id: d.id,
-          title: d.title,
-          category: d.category,
-          securityLevel: d.securityLevel,
-          evidence: d.evidenceSnippets[0] || { page: 1, section: '本文', text: d.maskedText.slice(0, 120) },
-        })),
-      });
-    } catch (err: any) {
-      console.warn('Gemini request failed, falling back to local synthesizer:', err.message);
-    }
+    return res.json({
+      response: ollamaRes.content,
+      modelUsed: `Ollama / ${ollamaRes.model} (校内ローカル推論)`,
+      isLocal: true,
+      inferenceTimeMs: ollamaRes.durationMs,
+      referencedDocs: activeDocs.map(d => ({
+        id: d.id,
+        title: d.title,
+        category: d.category,
+        securityLevel: d.securityLevel,
+        evidence: d.evidenceSnippets[0] || { page: 1, section: '本文', text: d.maskedText.slice(0, 120) },
+      })),
+    });
+  } catch (err: any) {
+    console.warn('Ollama chat unavailable, falling back to deterministic local synthesizer:', err.message);
   }
 
-  // Local AI Synthesis Engine (Simulates vLLM Qwen2.5-32B locally with zero cloud latency)
+  // Deterministic Local Fallback Synthesizer (when Ollama service is not running)
   let localAnswer = '';
   const selectedId = typeof targetDocId === 'string' ? targetDocId : '';
   if ((!selectedId || selectedId === 'doc-001') && (lowerPrompt.includes('熱中症') || lowerPrompt.includes('体育祭') || lowerPrompt.includes('wbgt'))) {
@@ -2105,9 +2286,9 @@ ${relevantExcerpt}${deadlineNote}
 
   res.json({
     response: localAnswer,
-    modelUsed: 'vLLM / Qwen2.5-32B-Instruct-AWQ (校内オンプレミス推論)',
+    modelUsed: `ローカルルール補完（Ollama ${OLLAMA_MODEL} 未接続時フォールバック）`,
     isLocal: true,
-    inferenceTimeMs: 142,
+    inferenceTimeMs: 42,
     referencedDocs: activeDocs.map(d => ({
       id: d.id,
       title: d.title,

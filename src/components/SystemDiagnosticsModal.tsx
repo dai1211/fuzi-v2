@@ -10,12 +10,12 @@ import {
   CheckCircle2,
   Lock,
   Layers,
-  Sparkles,
   Archive,
   RefreshCw,
   Clock,
   Trash2,
   Settings,
+  AlertTriangle,
 } from 'lucide-react';
 import { ServerStatusInfo, BackupStatusInfo, BackupRecord } from '../types';
 
@@ -25,8 +25,8 @@ interface SystemDiagnosticsModalProps {
   statusInfo: ServerStatusInfo | null;
   isStandaloneMode: boolean;
   setIsStandaloneMode: (val: boolean) => void;
-  useGeminiIfAvailable: boolean;
-  setUseGeminiIfAvailable: (val: boolean) => void;
+  onRefreshStatus?: () => void;
+  isRefreshingStatus?: boolean;
   backupStatus: BackupStatusInfo | null;
   isRunningBackup: boolean;
   backupFeedback: string | null;
@@ -78,8 +78,8 @@ export const SystemDiagnosticsModal: React.FC<SystemDiagnosticsModalProps> = ({
   statusInfo,
   isStandaloneMode,
   setIsStandaloneMode,
-  useGeminiIfAvailable,
-  setUseGeminiIfAvailable,
+  onRefreshStatus,
+  isRefreshingStatus = false,
   backupStatus,
   isRunningBackup,
   backupFeedback,
@@ -91,6 +91,8 @@ export const SystemDiagnosticsModal: React.FC<SystemDiagnosticsModalProps> = ({
   onOpenTrashCorner,
 }) => {
   if (!isOpen) return null;
+
+  const ollama = statusInfo?.ollama;
 
   const autoEnabled = backupStatus?.autoBackupEnabled ?? true;
   const intervalMinutes = backupStatus?.intervalMinutes ?? 60;
@@ -130,18 +132,18 @@ export const SystemDiagnosticsModal: React.FC<SystemDiagnosticsModalProps> = ({
             <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div>
               <h3 className="text-sm font-semibold text-slate-900">
-                外部クラウド通信 完全遮断（閉域隔離運用中）
+                外部クラウドAI通信 完全遮断（校内ローカル専用運用中）
               </h3>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                校内ネットワーク（LAN）の境界内部に独立配置されています。生徒・保護者・教員の氏名、学籍番号、指導記録などの機密書類データが外部へ送信されることはありません。
+                サーバー側で外部AI（Gemini API 等）への通信経路を完全に遮断しています。生徒・保護者・教員の氏名、学籍番号、指導記録などの機密書類データが外部へ送信されることはありません。
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs font-mono text-emerald-700">
                 <span className="inline-flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  外部送信パケット: 0 packets
+                  外部Gemini経路: 完全遮断
                 </span>
                 <span className="text-slate-300" aria-hidden="true">|</span>
-                <span className="text-slate-600">HTTPS（校内LAN内部）</span>
+                <span className="text-slate-600">推論先: 校内Ollama ({ollama?.model || 'gemma4:12b'})</span>
               </div>
             </div>
           </div>
@@ -344,7 +346,7 @@ export const SystemDiagnosticsModal: React.FC<SystemDiagnosticsModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  職員室の専用サーバーで14B〜32BクラスのLLM/VLMとChromaDBが高速動作。
+                  校内の親機PC1台で Ollama (Gemma 4 12B) を動かし、各職員PCからブラウザ経由で共有利用。
                 </p>
               </button>
 
@@ -375,33 +377,58 @@ export const SystemDiagnosticsModal: React.FC<SystemDiagnosticsModalProps> = ({
 
           {/* AI Engines Details */}
           <div className="space-y-2.5">
-            <h4 className="text-xs font-semibold text-slate-500">
-              校内AIエンジン構成
-            </h4>
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-semibold text-slate-500">
+                校内AIエンジン構成（Ollama / Gemma 4 12B）
+              </h4>
+              {onRefreshStatus && (
+                <button
+                  type="button"
+                  onClick={onRefreshStatus}
+                  disabled={isRefreshingStatus}
+                  className="h-7 inline-flex items-center gap-1.5 px-2.5 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isRefreshingStatus ? 'animate-spin' : ''}`} />
+                  <span>接続を再確認</span>
+                </button>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <div className="flex items-center gap-2 mb-1 text-slate-900 font-semibold text-xs">
-                  <Cpu className="w-4 h-4 text-indigo-600" />
-                  <span>ローカルLLM推論基盤</span>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="flex items-center gap-2 text-slate-900 font-semibold text-xs">
+                    <Cpu className="w-4 h-4 text-indigo-600" />
+                    <span>ローカルLLM推論基盤</span>
+                  </span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                      ollama?.connected
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
+                    {ollama?.connected ? '接続中' : '未接続'}
+                  </span>
                 </div>
                 <div className="text-xs text-slate-700 font-mono">
-                  vLLM / Qwen2.5-32B-Instruct-AWQ
+                  Ollama / {ollama?.model || 'gemma4:12b'}
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  14B〜32Bクラス高精度日本語モデル（32,768 tokens）
+                  要約・校内Q&Aを担当。校内PC 1台のキュー処理で安全に順番推論します。
                 </p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center gap-2 mb-1 text-slate-900 font-semibold text-xs">
                   <Layers className="w-4 h-4 text-indigo-600" />
-                  <span>ローカルVLM（視覚言語モデル）</span>
+                  <span>ローカルVLM（画像AI-OCR）</span>
                 </div>
                 <div className="text-xs text-slate-700 font-mono">
-                  Qwen2-VL-7B-Instruct
+                  Ollama Vision / {ollama?.visionModel || 'gemma4:12b'}
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  手書き文字・学校帳票レイアウトの高精度テキスト化
+                  撮影・画像アップロードの書類文字をローカル読取し、直後に仮名化します。
                 </p>
               </div>
 
@@ -427,62 +454,68 @@ export const SystemDiagnosticsModal: React.FC<SystemDiagnosticsModalProps> = ({
                   Local NER + Rule-based Masking v2.4
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  読取直後・保存前に氏名や住所等を自動置換
+                  読取直後・AI送信前・保存前に氏名や住所等を自動置換
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Hardware Spec */}
+          {/* Ollama Live Connection Details */}
           <div className="space-y-2.5">
             <h4 className="text-xs font-semibold text-slate-500">
-              校内サーバー ハードウェアリソース
+              Ollama 接続・キュー状態
             </h4>
             <div className="bg-slate-50 border border-slate-200 rounded-xl divide-y divide-slate-200 font-mono text-xs tabular-nums">
               <div className="px-4 py-2.5 flex justify-between items-center gap-4">
-                <span className="text-slate-500">GPU</span>
-                <span className="text-slate-900 font-medium">NVIDIA GeForce RTX 4090 (24GB VRAM)</span>
+                <span className="text-slate-500">OLLAMA_BASE_URL</span>
+                <span className="text-slate-900 font-medium truncate">
+                  {ollama?.baseUrl || 'http://127.0.0.1:11434'}
+                </span>
               </div>
               <div className="px-4 py-2.5 flex justify-between items-center gap-4">
-                <span className="text-slate-500">VRAM使用量</span>
-                <span className="text-emerald-700 font-medium">16.4 GB / 24.0 GB (68.3%)</span>
+                <span className="text-slate-500">接続状態 / モデル</span>
+                <span
+                  className={`font-medium ${
+                    ollama?.connected
+                      ? ollama.modelInstalled
+                        ? 'text-emerald-700'
+                        : 'text-amber-700'
+                      : 'text-amber-700'
+                  }`}
+                >
+                  {ollama?.connected
+                    ? ollama.modelInstalled
+                      ? `接続OK (${ollama.model} 導入済)`
+                      : `接続OK（${ollama.model} 未取得: ollama pull ${ollama.model}）`
+                    : `未接続（${ollama?.error || 'Ollama未起動'}）`}
+                </span>
               </div>
               <div className="px-4 py-2.5 flex justify-between items-center gap-4">
-                <span className="text-slate-500">GPU温度</span>
-                <span className="text-emerald-700 font-medium">54°C (正常)</span>
+                <span className="text-slate-500">同時推論キュー</span>
+                <span className="text-slate-900 font-medium">
+                  処理中・待機: {ollama?.activeQueueLength ?? 0}件
+                </span>
               </div>
               <div className="px-4 py-2.5 flex justify-between items-center gap-4">
-                <span className="text-slate-500">CPU / RAM</span>
-                <span className="text-slate-900 font-medium">AMD EPYC 16-Core / 64GB DDR5 ECC</span>
+                <span className="text-slate-500">外部Gemini API経路</span>
+                <span className="text-emerald-700 font-medium">完全遮断（利用不可）</span>
               </div>
             </div>
-          </div>
 
-          {/* Gemini Verification Mode (if key available) */}
-          {statusInfo?.cloudBackupAvailable && (
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2.5">
-                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
-                <div>
-                  <div className="text-xs font-semibold text-slate-900">
-                    開発・検証用 比較推論エンジンを有効化
+            {!ollama?.connected && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-semibold">
+                    親機PCで Ollama を起動すると Gemma 4 12B による対話・画像OCRが有効になります
                   </div>
-                  <div className="text-[11px] text-slate-500">
-                    ローカル推論結果と外部検証用モデルの回答精度を比較できます。
+                  <div className="font-mono text-[11px] text-amber-800">
+                    ollama pull {ollama?.model || 'gemma4:12b'} &amp;&amp; ollama serve
                   </div>
                 </div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={useGeminiIfAvailable}
-                  onChange={(e) => setUseGeminiIfAvailable(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-              </label>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Modal Footer */}

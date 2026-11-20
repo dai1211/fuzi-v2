@@ -41,7 +41,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<UserRole>('校長・教頭');
   const [isStandaloneMode, setIsStandaloneMode] = useState<boolean>(false);
-  const [useGeminiIfAvailable, setUseGeminiIfAvailable] = useState<boolean>(true);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState<boolean>(false);
 
   // Data states
   const [documents, setDocuments] = useState<SchoolDoc[]>([]);
@@ -147,6 +147,7 @@ export default function App() {
   };
 
   const fetchServerStatus = async () => {
+    setIsRefreshingStatus(true);
     try {
       const res = await fetch('/api/status');
       if (!res.ok) return;
@@ -157,6 +158,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to load status:', err);
+    } finally {
+      setIsRefreshingStatus(false);
     }
   };
 
@@ -889,7 +892,7 @@ export default function App() {
                   <div className="text-xs font-mono font-semibold text-indigo-600">STEP 01</div>
                   <h3 className="text-sm font-bold text-slate-900">AI-OCR 構造化読取</h3>
                   <p className="text-slate-600 leading-relaxed">
-                    手書き文字、図表、帳票レイアウトを完全ローカルのQwen2-VLが解析し、正確にテキスト化・構造化します。
+                    手書き文字、図表、帳票レイアウトを完全ローカルの Ollama（Gemma 4 12B）が解析し、正確にテキスト化・構造化します。
                   </p>
                 </div>
 
@@ -951,7 +954,6 @@ export default function App() {
         onSwitchDocument={handleSwitchDocument}
         onDocumentUpdated={handleDocumentUpdated}
         onDelete={handleDeleteDocument}
-        useGeminiIfAvailable={useGeminiIfAvailable}
       />
 
       <DocumentUploadModal
@@ -966,8 +968,8 @@ export default function App() {
         statusInfo={serverStatus}
         isStandaloneMode={isStandaloneMode}
         setIsStandaloneMode={setIsStandaloneMode}
-        useGeminiIfAvailable={useGeminiIfAvailable}
-        setUseGeminiIfAvailable={setUseGeminiIfAvailable}
+        onRefreshStatus={fetchServerStatus}
+        isRefreshingStatus={isRefreshingStatus}
         backupStatus={backupStatus}
         isRunningBackup={isRunningBackup}
         backupFeedback={backupFeedback}
@@ -989,7 +991,6 @@ export default function App() {
         clearTargetDoc={() => setTargetDocForChat(null)}
         initialChatRequest={initialChatRequest}
         clearInitialChatRequest={() => setInitialChatRequest(null)}
-        useGeminiIfAvailable={useGeminiIfAvailable}
       />
     </div>
   );

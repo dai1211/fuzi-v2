@@ -90,7 +90,7 @@ export const ContestGuideModal: React.FC = () => {
                     <Layers className="w-4 h-4 text-indigo-600 shrink-0" />
                     <span>ローカルVLM</span>
                   </div>
-                  <div className="text-[11px] font-mono text-slate-500 mt-1">Qwen2-VL-7B</div>
+                  <div className="text-[11px] font-mono text-slate-500 mt-1">Ollama Vision (Gemma 4 12B)</div>
                   <div className="text-[11px] text-slate-600 mt-0.5">手書き文字・表構造解析</div>
                 </div>
 
@@ -122,7 +122,7 @@ export const ContestGuideModal: React.FC = () => {
                 <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-lg text-center">
                   <div className="text-xs font-semibold text-slate-900 flex items-center justify-center gap-2">
                     <Cpu className="w-4 h-4 text-indigo-600" />
-                    <span>vLLM / LM Studio（14B〜32B ローカルLLM / Qwen2.5-32B）</span>
+                    <span>Ollama 校内ローカル推論基盤（Gemma 4 12B）</span>
                   </div>
                   <div className="text-[11px] text-slate-600 mt-1">
                     根拠文書ページ・条項を引用した高精度日本語要約・回答生成（推論速度 ~45ms/token）

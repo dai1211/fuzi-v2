@@ -38,7 +38,6 @@ interface DocumentViewerModalProps {
   onSwitchDocument?: (docId: string) => void;
   onDocumentUpdated?: (updatedDoc: SchoolDoc) => void;
   onDelete?: (doc: SchoolDoc) => void;
-  useGeminiIfAvailable?: boolean;
 }
 
 interface DiffLine {
@@ -92,7 +91,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   onSwitchDocument,
   onDocumentUpdated,
   onDelete,
-  useGeminiIfAvailable = true,
 }) => {
   const [viewMode, setViewMode] = useState<
     'masked' | 'original' | 'pii' | 'evidence' | 'qa' | 'related' | 'history'
@@ -211,7 +209,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
       const res = await fetch(`/api/documents/${document.id}/summarize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ useGeminiIfAvailable }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (res.ok) {
@@ -238,7 +236,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
         body: JSON.stringify({
           prompt: q,
           userRole,
-          useGeminiIfAvailable,
           targetDocId: document.id,
         }),
       });

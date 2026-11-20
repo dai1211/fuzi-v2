@@ -28,7 +28,6 @@ interface AIChatSidebarProps {
   clearTargetDoc: () => void;
   initialChatRequest?: ChatRequestPayload | null;
   clearInitialChatRequest?: () => void;
-  useGeminiIfAvailable: boolean;
 }
 
 export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
@@ -41,19 +40,18 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
   clearTargetDoc,
   initialChatRequest,
   clearInitialChatRequest,
-  useGeminiIfAvailable,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'msg-init',
       sender: 'ai',
-      text: `校内ローカルAIアシスタントです（vLLM / Qwen2.5-32B 校内オンプレミス推論）。
+      text: `校内ローカルAIアシスタントです（Ollama / Gemma 4 12B 校内オンプレミス推論）。
 校内LAN内の保管文書から、個人情報を保護（仮名化）した文脈で、行事マニュアル、感染症対応、生徒指導、会計規定などを回答します。
 
 気になる点や作成したい文案があればお尋ねください。`,
       timestamp: '現在',
       isLocal: true,
-      modelUsed: 'vLLM / Qwen2.5-32B (校内専用)',
+      modelUsed: 'Ollama / Gemma 4 12B (校内専用)',
     },
   ]);
 
@@ -118,7 +116,6 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
         body: JSON.stringify({
           prompt: queryText,
           userRole,
-          useGeminiIfAvailable,
           targetDocId: (overrideDocId ?? activeTargetDocId) || undefined,
         }),
       });
@@ -350,7 +347,7 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
               {m.sender === 'ai' && (
                 <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] gap-2">
                   <span className="text-slate-400 font-mono text-[10px] truncate">
-                    {m.modelUsed || 'vLLM Qwen2.5-32B'}
+                    {m.modelUsed || 'Ollama / Gemma 4 12B'}
                   </span>
                   <button
                     type="button"

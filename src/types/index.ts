@@ -185,5 +185,16 @@ export interface ServerStatusInfo {
     };
   };
   cloudBackupAvailable: boolean;
+  externalAiBlocked?: boolean;
+  ollama?: {
+    baseUrl: string;
+    model: string;
+    visionModel: string;
+    connected: boolean;
+    modelInstalled: boolean;
+    availableModels: string[];
+    activeQueueLength: number;
+    error?: string;
+  };
   backup?: BackupStatusInfo;
 }

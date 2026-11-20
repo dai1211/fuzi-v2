@@ -14,6 +14,9 @@ import {
   Tag,
   GitMerge,
   Plus,
+  Image as ImageIcon,
+  FileUp,
+  Loader2,
 } from 'lucide-react';
 import {
   CategoryType,
@@ -54,12 +57,17 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   const [newDeadlineType, setNewDeadlineType] = useState<DeadlineItem['type']>('提出期限');
   const [newDeadlineUrgency, setNewDeadlineUrgency] = useState<DeadlineItem['urgency']>('近日');
 
-  // Camera state
+  // Camera & OCR state
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
   const [wasCameraCapture, setWasCameraCapture] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isOcrRunning, setIsOcrRunning] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrEngineNotice, setOcrEngineNotice] = useState<string | null>(null);
+  const [ocrImagePreview, setOcrImagePreview] = useState<string | null>(null);
 
   // Analysis state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -200,12 +208,59 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     if (isOpen) {
       setSaveError(null);
       setDuplicateAlert(null);
+      setOcrError(null);
     }
   }, [isOpen]);
 
-  const capturePhoto = () => {
+  const runImageOcr = async (imageBase64: string, fileName?: string, fromCamera: boolean = false) => {
+    setIsOcrRunning(true);
+    setOcrError(null);
+    setOcrEngineNotice(null);
+    setSaveError(null);
+
+    try {
+      const res = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, fileName }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setOcrError(
+          data.error ||
+            'AI-OCRの実行に失敗しました。PC上でOllama（gemma4:12b）が起動しているか確認してください。'
+        );
+        return;
+      }
+
+      const extractedText = String(data.rawText || '');
+      const nextTitle =
+        title.trim() && !title.startsWith('[カメラ撮影OCR]')
+          ? title
+          : fromCamera
+          ? `[カメラ撮影OCR] ${data.suggestedTitle || '撮影書類'}`
+          : data.suggestedTitle || title || '画像OCR読取書類';
+
+      setTitle(nextTitle);
+      setRawText(extractedText);
+      setWasCameraCapture(fromCamera);
+      setOcrEngineNotice(
+        `${data.engine || 'Ollama Vision'} で文字認識完了（${data.inferenceTimeMs ?? 0}ms / 個人情報 ${data.piiCount ?? 0}件検出）`
+      );
+      await triggerAnalysis(nextTitle, extractedText, category, securityLevel, false);
+    } catch (err: any) {
+      setOcrError(
+        `OCRサーバー通信エラー: ${err?.message || '校内Ollamaサーバーに接続できませんでした。'}`
+      );
+    } finally {
+      setIsOcrRunning(false);
+    }
+  };
+
+  const simulateSampleCapture = () => {
     const scannedSample = presets[0];
-    const camTitle = `[カメラ撮影OCR] ${scannedSample.title}`;
+    const camTitle = `[サンプル読取] ${scannedSample.title}`;
     setTitle(camTitle);
     setCategory(scannedSample.category);
     setSecurityLevel(scannedSample.securityLevel);
@@ -215,9 +270,74 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     setRawText(scannedSample.text);
     setWasCameraCapture(true);
     setSaveError(null);
+    setOcrError(null);
+    setOcrImagePreview(null);
+    setOcrEngineNotice('サンプル書類テキストを読み込みました（ローカル解析実行済）');
     triggerAnalysis(camTitle, scannedSample.text, scannedSample.category, scannedSample.securityLevel, false);
     stopCamera();
     setSourceMode('upload');
+  };
+
+  const capturePhoto = async () => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      setCameraError(
+        'カメラ映像フレームを取得できませんでした。権限を確認するか、画像ファイルアップロード・サンプル読取をご利用ください。'
+      );
+      return;
+    }
+
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+    const width = Math.max(1, Math.round(video.videoWidth * scale));
+    const height = Math.max(1, Math.round(video.videoHeight * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setCameraError('カメラ画像のキャプチャ処理に失敗しました。');
+      return;
+    }
+
+    ctx.drawImage(video, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    setOcrImagePreview(dataUrl);
+    stopCamera();
+    setSourceMode('upload');
+    await runImageOcr(dataUrl, 'camera_capture.jpg', true);
+  };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setOcrError('対応形式は PNG / JPEG / WebP 画像です。');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setOcrError('画像サイズは 20MB 以下にしてください。');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) {
+        setOcrError('画像ファイルの読み込みに失敗しました。');
+        return;
+      }
+      setOcrImagePreview(dataUrl);
+      setSourceMode('upload');
+      await runImageOcr(dataUrl, file.name, false);
+    };
+    reader.onerror = () => {
+      setOcrError('画像ファイルの読み込み中にエラーが発生しました。');
+    };
+    reader.readAsDataURL(file);
   };
 
   const triggerAnalysis = async (
@@ -327,6 +447,9 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
       setAnalysisResult(null);
       setDuplicateAlert(null);
       setWasCameraCapture(false);
+      setOcrImagePreview(null);
+      setOcrError(null);
+      setOcrEngineNotice(null);
       onDocumentAdded(data.document, Boolean(data.updated), data.backupStatus);
       onClose();
     } catch (err: any) {
@@ -403,7 +526,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
               }`}
             >
               <UploadCloud className="w-3.5 h-3.5 shrink-0" />
-              <span>テキスト・手動入力</span>
+              <span>画像OCR・手動入力</span>
             </button>
           </div>
         </div>
@@ -414,6 +537,106 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
             <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-lg p-3 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{saveError}</span>
+            </div>
+          )}
+
+          {/* Image OCR Upload Box (shown in upload tab) */}
+          {sourceMode === 'upload' && (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>紙書類・配布物の画像から AI-OCR 読取（Ollama / Gemma 4 12B）</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    校内ローカルサーバーの Ollama Vision により画像を文字起こしし、外部AIへ送信せず仮名化・解析します（PNG / JPEG / WebP）。
+                  </p>
+                </div>
+
+                <div className="shrink-0">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    disabled={isOcrRunning}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-semibold rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                  >
+                    {isOcrRunning ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>OCR認識中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileUp className="w-3.5 h-3.5" />
+                        <span>画像ファイルを選択</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {isOcrRunning && (
+                <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg p-3 text-xs flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 text-indigo-600 animate-spin shrink-0" />
+                  <span>校内 Ollama (gemma4:12b) で書類画像を読み取り・仮名化チェックしています...</span>
+                </div>
+              )}
+
+              {ocrEngineNotice && !isOcrRunning && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg p-3 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{ocrEngineNotice}</span>
+                </div>
+              )}
+
+              {ocrError && !isOcrRunning && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-xs space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>{ocrError}</span>
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={simulateSampleCapture}
+                      className="h-7 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-semibold rounded-md text-[11px] transition-colors"
+                    >
+                      サンプル書類で入力をテスト
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {ocrImagePreview && (
+                <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-2.5">
+                  <img
+                    src={ocrImagePreview}
+                    alt="OCR読取対象プレビュー"
+                    className="w-16 h-16 object-cover rounded border border-slate-200 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1 text-[11px] text-slate-600">
+                    <div className="font-semibold text-slate-800">取り込み画像プレビュー</div>
+                    <div className="truncate">
+                      抽出されたテキストは下の本文欄で編集・確認してから保存できます。
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOcrImagePreview(null)}
+                    className="text-[11px] text-slate-400 hover:text-slate-700 px-2 py-1"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -466,13 +689,22 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                   <div className="absolute inset-0 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center text-white">
                     <AlertCircle className="w-8 h-8 text-amber-400 mb-2" />
                     <p className="text-xs max-w-md">{cameraError}</p>
-                    <button
-                      type="button"
-                      onClick={capturePhoto}
-                      className="mt-3 h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
-                    >
-                      サンプル書類で撮影をシミュレート
-                    </button>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSourceMode('upload')}
+                        className="h-8 px-3.5 bg-white text-slate-900 hover:bg-slate-100 rounded-lg text-xs font-semibold"
+                      >
+                        画像ファイルからOCR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={simulateSampleCapture}
+                        className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
+                      >
+                        サンプル書類で入力テスト
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -481,10 +713,11 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                 <button
                   type="button"
                   onClick={capturePhoto}
-                  className="h-9 inline-flex items-center gap-2 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors text-xs sm:text-sm"
+                  disabled={isOcrRunning}
+                  className="h-9 inline-flex items-center gap-2 px-5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-semibold rounded-lg transition-colors text-xs sm:text-sm"
                 >
                   <Camera className="w-4 h-4" />
-                  <span>撮影してローカルVLM解析を実行</span>
+                  <span>{isOcrRunning ? 'OCR認識中...' : '撮影してOllama AI-OCRを実行'}</span>
                 </button>
               </div>
             </div>
