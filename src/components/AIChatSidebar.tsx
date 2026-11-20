@@ -10,7 +10,7 @@ import {
   ExternalLink,
   RefreshCw,
 } from 'lucide-react';
-import { ChatMessage, SchoolDoc, UserRole } from '../types';
+import { ChatMessage, SchoolDoc } from '../types';
 
 interface ChatRequestPayload {
   docId?: string;
@@ -21,7 +21,6 @@ interface ChatRequestPayload {
 interface AIChatSidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  userRole: UserRole;
   documents: SchoolDoc[];
   onOpenDocEvidence: (docId: string, section?: string) => void;
   targetDocForChat: SchoolDoc | null;
@@ -33,7 +32,6 @@ interface AIChatSidebarProps {
 export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
   isOpen,
   onClose,
-  userRole,
   documents,
   onOpenDocEvidence,
   targetDocForChat,
@@ -115,7 +113,6 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: queryText,
-          userRole,
           targetDocId: (overrideDocId ?? activeTargetDocId) || undefined,
         }),
       });
@@ -178,12 +175,7 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
         `『${activeTargetDoc.title.slice(0, 18)}』の具体的な対応手順を教えて`,
         `この書類をもとに職員朝礼・週報用の共有文を作成して`,
       ]
-    : [
-        '体育祭のWBGT 31度以上の対応手順は？',
-        'インフルエンザ出席停止と学級閉鎖の基準は？',
-        '修学旅行のアレルギー生徒対応とエピペン携行ルール',
-        'PTA役員の選出ルールと会費改定内容',
-      ];
+    : documents.slice(0, 3).map((d) => `『${d.title.slice(0, 20)}』の要点を教えて`);
 
   if (!isOpen) return null;
 
@@ -267,18 +259,20 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
       </div>
 
       {/* Quick Prompts Bar */}
-      <div className="px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto flex gap-1.5 shrink-0">
-        {quickPrompts.map((qp, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => handleSendMessage(qp)}
-            className="text-[11px] bg-slate-50 border border-slate-200 hover:border-indigo-300 text-slate-700 hover:text-indigo-700 px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition-colors"
-          >
-            {qp}
-          </button>
-        ))}
-      </div>
+      {quickPrompts.length > 0 && (
+        <div className="px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto flex gap-1.5 shrink-0">
+          {quickPrompts.map((qp, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleSendMessage(qp)}
+              className="text-[11px] bg-slate-50 border border-slate-200 hover:border-indigo-300 text-slate-700 hover:text-indigo-700 px-2.5 py-1 rounded-md whitespace-nowrap shrink-0 transition-colors"
+            >
+              {qp}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Message History */}
       <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50 text-xs sm:text-[13px]">
@@ -290,7 +284,7 @@ export const AIChatSidebar: React.FC<AIChatSidebarProps> = ({
             <div className="flex items-center gap-1.5 mb-1 text-[11px] text-slate-400 px-1">
               {m.sender === 'user' ? (
                 <>
-                  <span>教員（{userRole}）</span>
+                  <span>教職員</span>
                   <User className="w-3 h-3 text-slate-400" />
                 </>
               ) : (

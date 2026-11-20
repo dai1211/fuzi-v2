@@ -196,7 +196,7 @@ export const ContestGuideModal: React.FC = () => {
             <li className="flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
               <span>
-                <strong className="text-slate-900">多層アクセス権限（RBAC）:</strong> 全校共有・学年部局限定・機密区分により、生徒指導記録等の機微情報を厳重に防護。
+                <strong className="text-slate-900">分類タグと仮名化保護:</strong> 全校共有・学年部局限定・機密区分で書類を整理しつつ、個人情報の仮名化（PIIマスキング）で安全な共有を実現。
               </span>
             </li>
           </ul>

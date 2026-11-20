@@ -11,8 +11,6 @@ export type SecurityLevel = '全校共有' | '学年・部局限定' | '機密';
 
 export type ImportanceLevel = '緊急・重要' | '重要' | '通常';
 
-export type UserRole = '校長・教頭' | '学年主任' | '一般教諭' | '学校事務職員';
-
 export interface PIIItem {
   type: string;
   original: string;

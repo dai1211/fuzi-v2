@@ -9,25 +9,23 @@ import {
   Calendar,
   AlertTriangle,
 } from 'lucide-react';
-import { CategoryType, SearchResult, UserRole } from '../types';
+import { CategoryType, SearchResult } from '../types';
 import { VoiceSearchButton } from './VoiceSearchButton';
 
 interface RAGSearchViewProps {
-  userRole: UserRole;
   onOpenDocEvidence: (docId: string, section?: string) => void;
   onAskAIWithQuery: (query: string, docId?: string) => void;
 }
 
 export const RAGSearchView: React.FC<RAGSearchViewProps> = ({
-  userRole,
   onOpenDocEvidence,
   onAskAIWithQuery,
 }) => {
-  const [query, setQuery] = useState('熱中症 WBGT 中断基準');
+  const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryType | 'all'>('all');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchTimeMs, setSearchTimeMs] = useState(18);
+  const [searchTimeMs, setSearchTimeMs] = useState(0);
 
   const categories: (CategoryType | 'all')[] = [
     'all',
@@ -51,7 +49,6 @@ export const RAGSearchView: React.FC<RAGSearchViewProps> = ({
         body: JSON.stringify({
           query: q,
           category: cat,
-          userRole,
         }),
       });
       const data = await res.json();
@@ -65,22 +62,21 @@ export const RAGSearchView: React.FC<RAGSearchViewProps> = ({
   };
 
   useEffect(() => {
-    executeSearch(query, selectedCategory);
-  }, [userRole]);
+    if (query.trim()) {
+      executeSearch(query, selectedCategory);
+    } else {
+      setResults([]);
+    }
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
     executeSearch(query, selectedCategory);
   };
-
-  const sampleQueries = [
-    '熱中症 WBGT 中断基準',
-    'インフルエンザ 出席停止期間 学級閉鎖',
-    '修学旅行 アレルギー エピペン',
-    'PTA役員 選出 ボランティア規約',
-    '定期考査 答案保管 セキュリティ',
-    '外部指導員 謝金 上限',
-  ];
 
   return (
     <div className="space-y-6">
@@ -124,24 +120,6 @@ export const RAGSearchView: React.FC<RAGSearchViewProps> = ({
             </button>
           </div>
         </form>
-
-        {/* Quick Sample Queries */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-          <span className="shrink-0 text-slate-400 font-medium">検索例:</span>
-          {sampleQueries.map((sq, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => {
-                setQuery(sq);
-                executeSearch(sq, selectedCategory);
-              }}
-              className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-md whitespace-nowrap transition-colors shrink-0"
-            >
-              {sq}
-            </button>
-          ))}
-        </div>
 
         {/* Category Filter Tabs */}
         <div className="pt-3 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto">
@@ -302,10 +280,14 @@ export const RAGSearchView: React.FC<RAGSearchViewProps> = ({
           <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500">
             <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
             <p className="font-semibold text-slate-700 text-sm">
-              一致する校内書類が見つかりませんでした
+              {query.trim()
+                ? '一致する校内書類が見つかりませんでした'
+                : '検索キーワードを入力して検索を実行してください'}
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              別のキーワードで検索するか、現在の閲覧権限（{userRole}）をご確認ください。
+              {query.trim()
+                ? '別のキーワードで検索するか、書類登録状況をご確認ください。'
+                : '登録された校内書類のタイトル・本文・キーワードから関連箇所を抽出します。'}
             </p>
           </div>
         )}

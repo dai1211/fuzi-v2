@@ -6,21 +6,17 @@ import {
   ShieldCheck,
   BookOpen,
   Server,
-  UserCheck,
   Bot,
   X,
   Trash2,
   Settings,
 } from 'lucide-react';
-import { UserRole } from '../types';
 
 export type NavTab = 'documents' | 'search' | 'upload' | 'pii' | 'trash' | 'contest';
 
 interface SidebarProps {
   currentTab: NavTab;
   setCurrentTab: (tab: NavTab) => void;
-  userRole: UserRole;
-  setUserRole: (role: UserRole) => void;
   onOpenDiagnostics: () => void;
   onOpenChat: () => void;
   isStandaloneMode: boolean;
@@ -33,8 +29,6 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   setCurrentTab,
-  userRole,
-  setUserRole,
   onOpenDiagnostics,
   onOpenChat,
   isStandaloneMode,
@@ -211,29 +205,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Sidebar Footer: Role Switcher & Server Diagnostics */}
-      <div className="p-3 border-t border-slate-200 bg-slate-50/70 space-y-2.5 shrink-0">
-        <div>
-          <label
-            htmlFor="role-select"
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 px-1"
-          >
-            <UserCheck className="w-3.5 h-3.5 text-slate-400" />
-            <span>現在の閲覧権限</span>
-          </label>
-          <select
-            id="role-select"
-            value={userRole}
-            onChange={(e) => setUserRole(e.target.value as UserRole)}
-            className="w-full h-9 px-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15"
-          >
-            <option value="校長・教頭">校長・教頭（全権限・機密可）</option>
-            <option value="学年主任">学年主任（学年・部局可）</option>
-            <option value="一般教諭">一般教諭（全校共有）</option>
-            <option value="学校事務職員">学校事務職員（事務・予算可）</option>
-          </select>
-        </div>
-
+      {/* Sidebar Footer: Server Diagnostics */}
+      <div className="p-3 border-t border-slate-200 bg-slate-50/70 shrink-0">
         <button
           type="button"
           onClick={() => {

@@ -39,15 +39,15 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   onClose,
   onDocumentAdded,
 }) => {
-  const [sourceMode, setSourceMode] = useState<'upload' | 'camera' | 'preset'>('preset');
+  const [sourceMode, setSourceMode] = useState<'upload' | 'camera'>('upload');
 
   // Document metadata form
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<CategoryType>('生徒指導');
-  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>('機密');
-  const [department, setDepartment] = useState('生徒指導部');
+  const [category, setCategory] = useState<CategoryType>('学年経営');
+  const [securityLevel, setSecurityLevel] = useState<SecurityLevel>('全校共有');
+  const [department, setDepartment] = useState('');
   const [receivedFrom, setReceivedFrom] = useState('');
-  const [author, setAuthor] = useState('生徒指導担当教諭');
+  const [author, setAuthor] = useState('');
   const [rawText, setRawText] = useState('');
 
   // Custom deadline editor state
@@ -91,81 +91,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
   const [newTagInput, setNewTagInput] = useState('');
   const [duplicateAlert, setDuplicateAlert] = useState<DuplicateCandidate[] | null>(null);
 
-  const presets = [
-    {
-      label: '手書き: 生徒指導連絡メモ（実名・住所・期限自動検出テスト）',
-      title: '生徒指導事案連絡票：6/14放課後トラブル事案および保護者面談録',
-      category: '生徒指導' as CategoryType,
-      securityLevel: '機密' as SecurityLevel,
-      department: '生徒指導部',
-      receivedFrom: '生徒指導部（吉田 剛 主事）',
-      author: '主事 吉田 剛',
-      text: `生徒指導事案 経過報告メモ
-日時: 令和7年6月14日 16:45
-対応教員: 生徒指導主事 吉田 剛、学級担任 佐々木 玲子
 
-対象生徒: 高橋 涼太 (1年4組・学籍番号 26144)
-関係生徒: 伊藤 健太 (1年4組・学籍番号 26112)
-事案概要:
-放課後の駐輪場付近において、高橋と伊藤の間で口論および持ち物の破損（通学カバン破損）が発生。
-保護者連絡:
-・高橋の母 高橋 智子 (携帯: 090-3333-7890 / 住所: 宮崎市青葉町2-11) へ状況報告。来校の上で謝罪の意思を表明。
-・伊藤の父 伊藤 裕介 (電話: 0985-77-8899) へ連絡。仲裁面談を翌朝9:00に設定。
-今後の指導方針・提出期限:
-令和7年6月20日までに指導経過報告書を教頭へ提出すること。`,
-    },
-    {
-      label: '重複検知＆更新履歴テスト：体育祭実施要項（改訂版）',
-      title: '令和7年度 体育祭実施要項・危機管理＆熱中症対応マニュアル',
-      category: '行事マニュアル' as CategoryType,
-      securityLevel: '全校共有' as SecurityLevel,
-      department: '保健体育科・特別活動部',
-      receivedFrom: '保健体育科（高橋 正人 主任）',
-      author: '体育科主任 高橋 正人',
-      text: `令和7年度 秋季大運動会・体育祭 実施要項（第3版・猛暑強化版）
-主催: 学校行事運営委員会
-総括責任者: 教頭 佐藤 秀樹
-危機管理担当: 体育科主任 高橋 正人 (連絡先: 090-1234-5678)
-
-第1章 危機管理・熱中症対策基準
-1. WBGT（暑さ指数）測定の義務付け
-・WBGT 28度〜30度（厳重警戒）: 給水タイムを10分ごとに短縮設定。
-・WBGT 31度以上（危険・中止基準）: 競技を直ちに中断し冷房室へ避難誘導。
-提出期限: 各学年団の救護シフト表を令和7年5月18日までに保健部へ提出すること。`,
-    },
-    {
-      label: '台風・自然災害発生時の臨時休校判断基準マニュアル',
-      title: '台風等異常気象時における登下校判断基準および緊急連絡体制マニュアル',
-      category: '保健・安全' as CategoryType,
-      securityLevel: '全校共有' as SecurityLevel,
-      department: '安全衛生・危機管理部',
-      receivedFrom: '教頭（佐藤 秀樹）',
-      author: '教頭 佐藤 秀樹',
-      text: `異常気象・自然災害時における登校判断基準規程
-策定: 危機管理委員会（統括: 教頭 佐藤 秀樹、安全主任 白石 誠）
-
-1. 午前6時時点での気象警報発表時の対応
-・午前6時00分の時点で、宮崎市内に「暴風警報」または「大雨特別警報」が発表されている場合は、原則「自宅待機（臨時休校）」とする。
-・午前6時30分までに学校連絡網（安心安全メール）および公式HPにて保護者へ通知を発信する。
-
-2. 登校後の天候急変時の一斉下校フロー
-・気象状況の悪化が予想される場合、5校時終了時点で全校生徒の一斉集団下校を実施する。`,
-    },
-  ];
-
-  const handleSelectPreset = (p: (typeof presets)[0]) => {
-    setTitle(p.title);
-    setCategory(p.category);
-    setSecurityLevel(p.securityLevel);
-    setDepartment(p.department);
-    setReceivedFrom(p.receivedFrom || '');
-    setAuthor(p.author);
-    setRawText(p.text);
-    setWasCameraCapture(false);
-    setDuplicateAlert(null);
-    setSaveError(null);
-    triggerAnalysis(p.title, p.text, p.category, p.securityLevel, false);
-  };
 
   const startCamera = async () => {
     try {
@@ -182,7 +108,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
       }
     } catch {
       setCameraError(
-        'カメラの起動に失敗しました。カメラ利用権限を許可するか、ファイルアップロードまたはプリセットをご利用ください。'
+        'カメラの起動に失敗しました。カメラ利用権限を許可するか、画像ファイルアップロード・テキスト入力をご利用ください。'
       );
     }
   };
@@ -258,31 +184,11 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
     }
   };
 
-  const simulateSampleCapture = () => {
-    const scannedSample = presets[0];
-    const camTitle = `[サンプル読取] ${scannedSample.title}`;
-    setTitle(camTitle);
-    setCategory(scannedSample.category);
-    setSecurityLevel(scannedSample.securityLevel);
-    setDepartment(scannedSample.department);
-    setReceivedFrom(scannedSample.receivedFrom || '');
-    setAuthor(scannedSample.author);
-    setRawText(scannedSample.text);
-    setWasCameraCapture(true);
-    setSaveError(null);
-    setOcrError(null);
-    setOcrImagePreview(null);
-    setOcrEngineNotice('サンプル書類テキストを読み込みました（ローカル解析実行済）');
-    triggerAnalysis(camTitle, scannedSample.text, scannedSample.category, scannedSample.securityLevel, false);
-    stopCamera();
-    setSourceMode('upload');
-  };
-
   const capturePhoto = async () => {
     const video = videoRef.current;
     if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
       setCameraError(
-        'カメラ映像フレームを取得できませんでした。権限を確認するか、画像ファイルアップロード・サンプル読取をご利用ください。'
+        'カメラ映像フレームを取得できませんでした。権限を確認するか、画像ファイルアップロード・テキスト入力をご利用ください。'
       );
       return;
     }
@@ -492,17 +398,18 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
 
         {/* Source Mode Tabs */}
         <div className="px-6 py-3 bg-slate-50/70 border-b border-slate-200 shrink-0">
-          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg">
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
             <button
               type="button"
-              onClick={() => setSourceMode('preset')}
-              className={`h-8 px-3 rounded-md text-xs font-medium transition-colors whitespace-nowrap truncate ${
-                sourceMode === 'preset'
+              onClick={() => setSourceMode('upload')}
+              className={`h-8 px-3 rounded-md text-xs font-medium transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap truncate ${
+                sourceMode === 'upload'
                   ? 'bg-white text-indigo-700 font-semibold shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              実務サンプル（検証用）
+              <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+              <span>画像OCR・手動入力</span>
             </button>
             <button
               type="button"
@@ -515,18 +422,6 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
             >
               <Camera className="w-3.5 h-3.5 shrink-0" />
               <span>カメラ撮影</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSourceMode('upload')}
-              className={`h-8 px-3 rounded-md text-xs font-medium transition-colors inline-flex items-center justify-center gap-1.5 whitespace-nowrap truncate ${
-                sourceMode === 'upload'
-                  ? 'bg-white text-indigo-700 font-semibold shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <UploadCloud className="w-3.5 h-3.5 shrink-0" />
-              <span>画像OCR・手動入力</span>
             </button>
           </div>
         </div>
@@ -598,20 +493,9 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
               )}
 
               {ocrError && !isOcrRunning && (
-                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-xs space-y-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <span>{ocrError}</span>
-                  </div>
-                  <div className="flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={simulateSampleCapture}
-                      className="h-7 px-3 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-semibold rounded-md text-[11px] transition-colors"
-                    >
-                      サンプル書類で入力をテスト
-                    </button>
-                  </div>
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>{ocrError}</span>
                 </div>
               )}
 
@@ -640,30 +524,6 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
             </div>
           )}
 
-          {/* Preset Selector */}
-          {sourceMode === 'preset' && (
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-700 block">
-                検証用プリセットを選択（クリックすると自動解析を実行します）
-              </label>
-              <div className="grid grid-cols-1 gap-2">
-                {presets.map((p, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectPreset(p)}
-                    className="p-3.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-slate-50 text-left transition-colors group"
-                  >
-                    <div className="font-semibold text-slate-900 group-hover:text-indigo-700 text-xs sm:text-sm">
-                      {p.label}
-                    </div>
-                    <div className="text-xs text-slate-500 mt-1 truncate">{p.title}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Camera Viewport */}
           {sourceMode === 'camera' && (
             <div className="space-y-3">
@@ -689,22 +549,13 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                   <div className="absolute inset-0 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center text-white">
                     <AlertCircle className="w-8 h-8 text-amber-400 mb-2" />
                     <p className="text-xs max-w-md">{cameraError}</p>
-                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setSourceMode('upload')}
-                        className="h-8 px-3.5 bg-white text-slate-900 hover:bg-slate-100 rounded-lg text-xs font-semibold"
-                      >
-                        画像ファイルからOCR
-                      </button>
-                      <button
-                        type="button"
-                        onClick={simulateSampleCapture}
-                        className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
-                      >
-                        サンプル書類で入力テスト
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSourceMode('upload')}
+                      className="mt-3 h-8 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
+                    >
+                      画像ファイル・手動入力へ切り替え
+                    </button>
                   </div>
                 )}
               </div>
@@ -855,7 +706,7 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
 
             <div>
               <label className="text-xs font-semibold text-slate-700 mb-1.5 block">
-                秘匿度タグ（権限管理）
+                分類・秘匿度タグ
               </label>
               <select
                 value={securityLevel}
@@ -866,9 +717,9 @@ export const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                 }}
                 className="w-full h-9 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 font-medium"
               >
-                <option value="全校共有">全校共有（全教職員が閲覧可能）</option>
-                <option value="学年・部局限定">学年・部局限定（該当学年・担当者のみ）</option>
-                <option value="機密">機密（管理職・生徒指導コアのみ）</option>
+                <option value="全校共有">全校共有（一般的な共有資料）</option>
+                <option value="学年・部局限定">学年・部局限定（特定学年・部局向け）</option>
+                <option value="機密">機密（要配慮・取り扱い注意）</option>
               </select>
             </div>
           </div>

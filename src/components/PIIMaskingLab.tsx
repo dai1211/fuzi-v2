@@ -28,16 +28,7 @@ interface PIIMaskingLabProps {
   onPiiBackedUp?: (backupStatus?: BackupStatusInfo) => void;
 }
 
-const DEFAULT_SAMPLE_PII_TEXT = `【生徒指導相談票】
-生徒: 中村 蓮（3年1組・学籍番号 23055）
-保護者: 母 中村 美代子（携帯: 090-4444-9876）
-現住所: 宮崎県宮崎市大淀3丁目8-19
-指導担当: 学級担任 坂本 健太郎 教諭
-
-相談要旨:
-第2回進路希望調査において、本人は県立宮崎南高校を希望。保護者からは家庭事情（祖父の通院介護）に関する相談あり。
-次回面談予定: 7月10日 16:30 応接室にて校長 谷口 誠 教頭 佐藤 秀樹 同席のもと実施予定。`;
-
+const LEGACY_SAMPLE_PREFIX = '【生徒指導相談票】\n生徒: 中村 蓮';
 const PII_LAB_STORAGE_KEY = 'school_ai_pii_lab_backup_v1';
 
 function formatSavedTimeJP(iso: string): string {
@@ -59,7 +50,11 @@ export const PIIMaskingLab: React.FC<PIIMaskingLabProps> = ({ onPiiBackedUp }) =
         const saved = window.localStorage.getItem(PII_LAB_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (typeof parsed.originalText === 'string' && parsed.originalText.trim()) {
+          if (
+            typeof parsed.originalText === 'string' &&
+            parsed.originalText.trim() &&
+            !parsed.originalText.startsWith(LEGACY_SAMPLE_PREFIX)
+          ) {
             return parsed.originalText;
           }
         }
@@ -67,7 +62,7 @@ export const PIIMaskingLab: React.FC<PIIMaskingLabProps> = ({ onPiiBackedUp }) =
         // ignore storage parse error
       }
     }
-    return DEFAULT_SAMPLE_PII_TEXT;
+    return '';
   });
 
   const [maskedOutput, setMaskedOutput] = useState('');

@@ -11,11 +11,10 @@ import {
   History,
   Trash2,
 } from 'lucide-react';
-import { SchoolDoc, UserRole } from '../types';
+import { SchoolDoc } from '../types';
 
 interface DocumentCardProps {
   doc: SchoolDoc;
-  userRole: UserRole;
   onSelect: (doc: SchoolDoc) => void;
   onAskAI: (doc: SchoolDoc) => void;
   onSelectTag?: (tag: string) => void;
@@ -24,7 +23,6 @@ interface DocumentCardProps {
 
 export const DocumentCard: React.FC<DocumentCardProps> = ({
   doc,
-  userRole,
   onSelect,
   onAskAI,
   onSelectTag,
@@ -41,25 +39,10 @@ export const DocumentCard: React.FC<DocumentCardProps> = ({
     }
   };
 
-  const isRestrictedForUser = () => {
-    if (userRole === '校長・教頭') return false;
-    if (userRole === '学年主任' && doc.securityLevel === '機密') return true;
-    if (userRole === '一般教諭' && doc.securityLevel !== '全校共有' && doc.category !== '学年経営') return true;
-    if (userRole === '学校事務職員' && doc.securityLevel !== '全校共有' && doc.category !== '事務・予算') return true;
-    return false;
-  };
-
-  const isRestricted = isRestrictedForUser();
   const primaryDeadline = doc.deadlines?.[0];
 
   return (
-    <article
-      className={`bg-white border border-slate-200 rounded-xl p-5 transition-colors flex flex-col justify-between ${
-        isRestricted
-          ? 'opacity-70 bg-slate-50/70'
-          : 'hover:border-slate-300'
-      }`}
-    >
+    <article className="bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-5 transition-colors flex flex-col justify-between">
       {/* Top Section */}
       <div>
         {/* Unboxed Metadata Header */}

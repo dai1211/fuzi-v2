@@ -30,16 +30,14 @@ import {
   CategoryType,
   SecurityLevel,
   ImportanceLevel,
-  UserRole,
   ServerStatusInfo,
   BackupStatusInfo,
 } from './types';
 
 export default function App() {
-  // Navigation & Role states
+  // Navigation & Mode states
   const [currentTab, setCurrentTab] = useState<NavTab>('documents');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
-  const [userRole, setUserRole] = useState<UserRole>('校長・教頭');
   const [isStandaloneMode, setIsStandaloneMode] = useState<boolean>(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState<boolean>(false);
 
@@ -124,7 +122,7 @@ export default function App() {
   const fetchDocuments = async () => {
     setIsLoadingDocs(true);
     try {
-      const res = await fetch(`/api/documents?role=${encodeURIComponent(userRole)}`);
+      const res = await fetch('/api/documents');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setDocuments(data.documents || []);
@@ -137,7 +135,7 @@ export default function App() {
 
   const fetchDeletedDocuments = async () => {
     try {
-      const res = await fetch(`/api/deleted-documents?role=${encodeURIComponent(userRole)}`);
+      const res = await fetch('/api/deleted-documents');
       if (!res.ok) return;
       const data = await res.json();
       setDeletedDocuments(data.documents || []);
@@ -237,7 +235,7 @@ export default function App() {
     fetchDocuments();
     fetchDeletedDocuments();
     fetchServerStatus();
-  }, [userRole]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -502,8 +500,6 @@ export default function App() {
       <Sidebar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
-        userRole={userRole}
-        setUserRole={setUserRole}
         onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         onOpenChat={() => setIsChatOpen(true)}
         isStandaloneMode={isStandaloneMode}
@@ -569,8 +565,6 @@ export default function App() {
                   <span>
                     保管数: <strong className="font-mono text-slate-900">{documents.length}</strong>件
                   </span>
-                  <span aria-hidden="true" className="text-slate-300">·</span>
-                  <span>権限: <strong className="text-slate-800">{userRole}</strong></span>
                 </div>
               </div>
 
@@ -795,7 +789,6 @@ export default function App() {
                       <DocumentCard
                         key={doc.id}
                         doc={doc}
-                        userRole={userRole}
                         onSelect={(d) => {
                           setSelectedDocForView(d);
                           setHighlightSection(undefined);
@@ -845,7 +838,6 @@ export default function App() {
           {/* TAB 2: AI RAG SEARCH */}
           {currentTab === 'search' && (
             <RAGSearchView
-              userRole={userRole}
               onOpenDocEvidence={handleOpenDocEvidence}
               onAskAIWithQuery={handleAskAIWithQuery}
             />
@@ -948,7 +940,6 @@ export default function App() {
           setIsViewerOpen(false);
           setSelectedDocForView(null);
         }}
-        userRole={userRole}
         highlightSection={highlightSection}
         onAskAIAboutDoc={handleAskAIAboutDoc}
         onSwitchDocument={handleSwitchDocument}
@@ -984,7 +975,6 @@ export default function App() {
       <AIChatSidebar
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
-        userRole={userRole}
         documents={documents}
         onOpenDocEvidence={handleOpenDocEvidence}
         targetDocForChat={targetDocForChat}

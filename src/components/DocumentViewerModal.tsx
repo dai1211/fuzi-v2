@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldCheck,
-  Lock,
   Unlock,
   Copy,
   Check,
@@ -26,13 +25,12 @@ import {
   Inbox,
   Trash2,
 } from 'lucide-react';
-import { SchoolDoc, UserRole, RelatedDocumentItem, DeadlineItem } from '../types';
+import { SchoolDoc, RelatedDocumentItem, DeadlineItem } from '../types';
 
 interface DocumentViewerModalProps {
   document: SchoolDoc | null;
   isOpen: boolean;
   onClose: () => void;
-  userRole: UserRole;
   highlightSection?: string;
   onAskAIAboutDoc?: (doc: SchoolDoc) => void;
   onSwitchDocument?: (docId: string) => void;
@@ -85,7 +83,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   document,
   isOpen,
   onClose,
-  userRole,
   highlightSection,
   onAskAIAboutDoc,
   onSwitchDocument,
@@ -96,7 +93,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
     'masked' | 'original' | 'pii' | 'evidence' | 'qa' | 'related' | 'history'
   >('masked');
   const [copied, setCopied] = useState(false);
-  const [showUnlockNotice, setShowUnlockNotice] = useState(false);
 
   // AI Summary regeneration state
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -163,17 +159,15 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   useEffect(() => {
     if (isOpen && document && viewMode === 'related') {
       setLoadingRelated(true);
-      fetch(`/api/documents/${document.id}/related?role=${encodeURIComponent(userRole)}`)
+      fetch(`/api/documents/${document.id}/related`)
         .then((r) => (r.ok ? r.json() : { related: [] }))
         .then((data) => setRelatedDocs(data.related || []))
         .catch(() => setRelatedDocs([]))
         .finally(() => setLoadingRelated(false));
     }
-  }, [isOpen, document?.id, viewMode, userRole]);
+  }, [isOpen, document?.id, viewMode]);
 
   if (!isOpen || !document) return null;
-
-  const canViewOriginal = userRole === '校長・教頭';
 
   const handleCopy = async (text: string) => {
     try {
@@ -192,15 +186,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
     } catch (err) {
       console.error('Copy failed:', err);
     }
-  };
-
-  const handleOriginalTabClick = () => {
-    if (!canViewOriginal) {
-      setShowUnlockNotice(true);
-      setTimeout(() => setShowUnlockNotice(false), 3500);
-      return;
-    }
-    setViewMode('original');
   };
 
   const handleRegenerateSummary = async () => {
@@ -235,7 +220,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: q,
-          userRole,
           targetDocId: document.id,
         }),
       });
@@ -264,7 +248,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
         body: JSON.stringify({
           rawText: editBodyText,
           changeNote: editChangeNote.trim() || `第${document.version + 1}版 改訂更新`,
-          updatedBy: userRole,
+          updatedBy: '教職員',
         }),
       });
       const data = await res.json();
@@ -430,26 +414,6 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
           </div>
         </div>
 
-        {/* Unlocked Warning Notice */}
-        {showUnlockNotice && (
-          <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 flex items-center justify-between text-xs text-amber-900 shrink-0">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>
-                <strong>原本（実名・電話番号・住所）の閲覧制限:</strong> 現在の権限（{userRole}）では原本の生データを閲覧できません。「校長・教頭」権限に切り替えてください。
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowUnlockNotice(false)}
-              className="text-amber-700 hover:text-amber-900 font-bold ml-3"
-              aria-label="通知を閉じる"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
         {/* Tab Switcher & Action Toolbar */}
         <div className="px-6 py-2.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 shrink-0">
           {/* View Mode Tabs */}
@@ -534,18 +498,14 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
 
             <button
               type="button"
-              onClick={handleOriginalTabClick}
+              onClick={() => setViewMode('original')}
               className={`h-7 inline-flex items-center gap-1.5 px-2.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
                 viewMode === 'original'
                   ? 'bg-white text-rose-700 font-semibold shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {canViewOriginal ? (
-                <Unlock className="w-3.5 h-3.5 text-rose-600" />
-              ) : (
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-              )}
+              <Unlock className="w-3.5 h-3.5 text-rose-600" />
               <span>原本</span>
             </button>
           </div>
@@ -556,7 +516,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
               type="button"
               onClick={() =>
                 handleCopy(
-                  viewMode === 'original' && canViewOriginal
+                  viewMode === 'original'
                     ? document.originalText
                     : document.maskedText
                 )
@@ -604,9 +564,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                 <span className="text-slate-400 block text-[11px]">作成者</span>
                 <span className="font-medium text-slate-800 flex items-center gap-1.5 mt-1">
                   <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="truncate">
-                    {canViewOriginal ? document.author : document.authorMasked}
-                  </span>
+                  <span className="truncate">{document.author}</span>
                 </span>
               </div>
               <div>
@@ -975,7 +933,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                   ))}
                   {relatedDocs.length === 0 && (
                     <div className="p-8 text-center text-xs text-slate-500 bg-white border border-slate-200 rounded-xl">
-                      閲覧権限内で一致する関連書類が見つかりませんでした。
+                      一致する関連書類が見つかりませんでした。
                     </div>
                   )}
                 </div>
@@ -1120,10 +1078,10 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-4 border-b border-rose-100 text-xs">
                 <span className="font-semibold text-rose-800 flex items-center gap-1.5">
                   <Unlock className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>管理職認証済み：実名・住所・電話番号 原本データ</span>
+                  <span>実名・住所・電話番号 原本データ</span>
                 </span>
                 <span className="text-rose-600 font-mono text-[11px]">
-                  ※機密情報のため校外持出厳禁
+                  ※校内運用データ（外部送信なし）
                 </span>
               </div>
               <div className="font-mono text-xs sm:text-[13px] text-slate-900 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-lg border border-slate-200">
@@ -1161,7 +1119,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                           {item.type}
                         </td>
                         <td className="px-4 py-2.5 font-mono text-rose-700">
-                          {canViewOriginal ? item.original : '•••••••• (管理者のみ表示)'}
+                          {item.original}
                         </td>
                         <td className="px-4 py-2.5 font-mono text-emerald-700 font-semibold">
                           {item.masked}
